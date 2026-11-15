@@ -1,11 +1,17 @@
 import { api } from '../api.js';
-import { ENUMS, riskTone, statusTone, tagTone, wan } from '../config.js';
+import { ENUMS, caliberTone, riskTone, statusTone, tagTone, wan } from '../config.js';
 import { drawer, errorBox, errorMessage, esc, field, fmtTime, kv, table } from '../ui.js';
 
 const state = { q: '', agencyId: '', status: '', risk: '', propertyId: '' };
 
 function pairCell(raw, norm) {
   return `<div class="pair"><span class="raw">${esc(raw)}</span><span class="arrow">→</span><span class="norm">${esc(norm)}</span></div>`;
+}
+
+function caliberBadge(norm) {
+  if (!norm || !norm.area_caliber) return '';
+  const label = norm.area_caliber_label || ENUMS.areaCaliber[norm.area_caliber] || norm.area_caliber;
+  return `<span class="badge ${caliberTone(norm.area_caliber)}">${esc(label)}</span>`;
 }
 
 function openListing(view, ctx, item) {
@@ -16,7 +22,8 @@ function openListing(view, ctx, item) {
     body: `${kv([
       ['小区', `${pairCell(item.community_raw, item.norm.community)}`],
       ['户型', `${pairCell(item.layout_raw, item.norm.layout)}`],
-      ['面积', `${pairCell(item.area_raw, item.norm.area === null ? '（无法解析）' : `${item.norm.area} ㎡`)}`],
+      ['面积', `${pairCell(item.area_raw, item.norm.area === null ? '（无法解析）' : `${item.norm.area} ㎡`)} ${caliberBadge(item.norm)}`],
+      ['面积依据', esc(item.norm.area_basis || '—')],
       ['价格', `${pairCell(item.price_raw, item.norm.price ? wan(item.norm.price) : '（无法解析）')}`],
       ['楼层', `${pairCell(item.floor_raw, item.norm.floor ? `${item.norm.floor}/${item.norm.floor_total || '?'} · ${item.norm.floor_band}` : '（仅区间 / 缺失）')}`],
       ['朝向', `${pairCell(item.orientation_raw, item.norm.orientation || '—')}`],
@@ -95,7 +102,7 @@ export const listingsPage = {
             { key: 'lid', label: '挂牌编号', className: 'mono' },
             { key: 'agency_name', label: '中介', render: (row) => esc(row.agency_name) },
             { key: 'community', label: '小区', render: (row) => pairCell(row.community_raw, row.norm.community) },
-            { key: 'area', label: '面积', render: (row) => pairCell(row.area_raw, row.norm.area === null ? '—' : `${row.norm.area}㎡`) },
+            { key: 'area', label: '面积', render: (row) => `${pairCell(row.area_raw, row.norm.area === null ? '—' : `${row.norm.area}㎡`)} ${caliberBadge(row.norm)}` },
             { key: 'price', label: '价格', render: (row) => pairCell(row.price_raw, row.norm.price ? wan(row.norm.price) : '—') },
             { key: 'floor', label: '楼层', render: (row) => pairCell(row.floor_raw, row.norm.floor ? `${row.norm.floor}/${row.norm.floor_total || '?'} 层` : '仅区间') },
             { key: 'status', label: '状态', render: (row) => `<span class="badge ${statusTone(row.status)}">${esc(row.status_label)}</span>` },

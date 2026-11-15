@@ -1,5 +1,5 @@
 import { api } from '../api.js';
-import { ENUMS, can, pct, riskTone, tagTone, wan } from '../config.js';
+import { ENUMS, caliberTone, can, pct, riskTone, tagTone, wan } from '../config.js';
 import { badge, drawer, emptyState, errorBox, errorMessage, esc, field, fmtTime, kv, table, toast } from '../ui.js';
 
 const state = { q: '', riskLevel: '', tag: '', multi: '', sort: 'risk', threshold: '0.80' };
@@ -16,6 +16,11 @@ function riskMeter(prop) {
   </div>`;
 }
 
+function caliberBadge(caliber, label) {
+  if (!caliber) return '';
+  return `<span class="badge ${caliberTone(caliber)}">${esc(label || ENUMS.areaCaliber[caliber] || caliber)}</span>`;
+}
+
 function memberTable(members) {
   const rows = members
     .map((item) => {
@@ -24,7 +29,7 @@ function memberTable(members) {
       return `<tr data-id="${esc(item.id)}">
         <td>${esc(item.agency_name)}<div class="mono muted">${esc(item.lid)}</div></td>
         <td><div class="pair"><span class="raw">${esc(item.community_raw)}</span><span class="arrow">→</span><span class="norm">${esc(item.norm.community)}</span></div></td>
-        <td><div class="pair"><span class="raw">${esc(item.area_raw)}</span><span class="arrow">→</span><span class="norm">${esc(item.norm.area ?? '—')}</span></div></td>
+        <td><div class="pair"><span class="raw">${esc(item.area_raw)}</span><span class="arrow">→</span><span class="norm">${esc(item.norm.area ?? '—')}</span></div>${caliberBadge(item.norm.area_caliber, item.norm.area_caliber_label)}${item.norm.area_basis ? `<div class="mono muted">${esc(item.norm.area_basis)}</div>` : ''}</td>
         <td><div class="pair"><span class="raw">${esc(item.price_raw)}</span><span class="arrow">→</span><span class="norm">${item.norm.price ? esc(wan(item.norm.price)) : '—'}</span></div></td>
         <td class="dev ${devClass}">${(dev * 100).toFixed(1)}%</td>
         <td>${(item.risk_tags || []).map((tag) => `<span class="badge ${tagTone(tag)}">${esc(ENUMS.riskTag[tag] || tag)}</span>`).join(' ') || esc(ENUMS.listingStatus[item.status] || item.status)}</td>
@@ -32,7 +37,7 @@ function memberTable(members) {
     })
     .join('');
   return `<div class="members"><table class="data compact">
-    <thead><tr><th>中介 / 编号</th><th>小区 原文→归一</th><th>面积</th><th>价格</th><th>偏离中位</th><th>标签</th></tr></thead>
+    <thead><tr><th>中介 / 编号</th><th>小区 原文→归一</th><th>面积（含口径与依据）</th><th>价格</th><th>偏离中位</th><th>标签</th></tr></thead>
     <tbody>${rows}</tbody></table></div>`;
 }
 
@@ -51,6 +56,8 @@ async function openCluster(view, ctx, summary) {
     wide: true,
     body: `${kv([
       ['面积众数', `<span class="mono">${esc(prop.area_mode)} ㎡</span>（${esc(prop.area_min)}–${esc(prop.area_max)}）`],
+      ['采信口径', caliberBadge(prop.area_caliber, prop.area_caliber_label)],
+      ['面积依据', esc((prop.area_basis || {}).summary || '—')],
       ['价格中位', `<span class="mono">${esc(wan(prop.price_median))}</span>（${esc(wan(prop.price_min))}–${esc(wan(prop.price_max))}）`],
       ['价差', `<span class="mono">${esc(prop.spread_wan)} 万</span> · 离散度 ${esc(prop.dispersion)}`],
       ['中介', esc((prop.agency_names || []).join(' / ') || '—')],
@@ -62,7 +69,7 @@ async function openCluster(view, ctx, summary) {
     ])}
     <h3 style="margin:14px 0 8px;font-size:0.95rem">成员对照（算法 A 连边结果）</h3>
     ${memberTable(prop.members || [])}
-    <p class="note">面积取众数、价格取中位、中介数去重计数；偏离 = (该条价格 − 簇中位) / 簇中位，低于 −10% 记为钓鱼价。</p>`,
+    <p class="note">面积统一为建筑面积口径后取众数（仅套内挂牌按小区实测得房率折算，折算连边面积差收紧到 3㎡），价格取中位、中介数去重计数；偏离 = (该条价格 − 簇中位) / 簇中位，低于 −10% 记为钓鱼价。</p>`,
     footer: `<button class="btn ghost" data-listings>查看该簇全部挂牌</button>`,
   });
   root.querySelector('[data-listings]')?.addEventListener('click', () => {
@@ -137,7 +144,7 @@ export const clustersPage = {
           rows: data.items,
           columns: [
             { key: 'community', label: '小区 / 户型', render: (row) => `<b>${esc(row.community)}</b><div class="mono muted">${esc(row.layout)} · 簇 #${esc(row.id)}</div>` },
-            { key: 'area_mode', label: '面积', className: 'num', render: (row) => `${esc(row.area_mode)} ㎡` },
+            { key: 'area_mode', label: '面积', className: 'num', render: (row) => `${esc(row.area_mode)} ㎡<div>${caliberBadge(row.area_caliber, row.area_caliber_label)}</div>` },
             { key: 'price_median', label: '价格中位', className: 'num', render: (row) => esc(wan(row.price_median)) },
             { key: 'spread_wan', label: '价差', className: 'num', render: (row) => `${esc(row.spread_wan)} 万` },
             { key: 'member_count', label: '成员 / 中介', className: 'num', render: (row) => `${esc(row.member_count)} / ${esc(row.agency_count)}` },

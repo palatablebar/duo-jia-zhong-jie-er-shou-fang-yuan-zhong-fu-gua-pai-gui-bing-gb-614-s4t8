@@ -37,6 +37,11 @@ def _apply_normalized(listing: Listing, norm: dict) -> None:
     listing.community_norm = norm["community_norm"]
     listing.layout_norm = norm["layout_norm"]
     listing.area_num = norm["area_num"]
+    listing.area_gross = norm["area_gross"]
+    listing.area_inner = norm["area_inner"]
+    listing.area_caliber = norm["area_caliber"]
+    listing.area_inferred = norm["area_inferred"]
+    listing.area_basis = norm["area_basis"]
     listing.price_num = norm["price_num"]
     listing.floor_num = norm["floor_num"]
     listing.floor_total = norm["floor_total"]
@@ -59,6 +64,7 @@ def run_pipeline(db, run: MatchRun, threshold: float = SIMILARITY_THRESHOLD) -> 
 
     raw_rows = [{field: getattr(listing, field) for field in LISTING_FIELDS} for listing in listings]
     normalized = [normalizer.normalize_listing(raw) for raw in raw_rows]
+    calibration = entity_resolution.calibrate_areas(normalized)
     for listing, norm in zip(listings, normalized, strict=True):
         _apply_normalized(listing, norm)
 
@@ -99,6 +105,8 @@ def run_pipeline(db, run: MatchRun, threshold: float = SIMILARITY_THRESHOLD) -> 
         prop.area_mode = golden["area_mode"]
         prop.area_min = golden["area_min"]
         prop.area_max = golden["area_max"]
+        prop.area_caliber = golden["area_caliber"]
+        prop.area_basis = golden["area_basis"]
         prop.price_median = golden["price_median"]
         prop.price_min = golden["price_min"]
         prop.price_max = golden["price_max"]
@@ -151,6 +159,7 @@ def run_pipeline(db, run: MatchRun, threshold: float = SIMILARITY_THRESHOLD) -> 
     )
     log_lines = [
         f"输入挂牌 {metrics['listings']} 条，面积归一失败 {sum(1 for n in normalized if n['area_num'] is None)} 条",
+        f"面积口径：仅套内折算 {calibration['inferred']} 条（{len(calibration['community_ratio'])} 个小区实测得房率），其余直采",
         f"blocking 候选对 {metrics['pairs_scored']} 组，阈值 {threshold:.2f} 连边 {metrics['pairs_linked']} 条",
         f"并查集 + 传递闭包得到 {metrics['clusters']} 个簇，其中多成员簇 {metrics['multi_clusters']} 个，去重率 {metrics['dedup_rate']:.2%}",
         f"算法 B：钓鱼价 {baits} 条、僵尸挂牌 {stales} 条，高风险簇 {risk_high} 个、中风险簇 {risk_medium} 个",

@@ -30,6 +30,67 @@ def test_area_missing_or_dirty():
 
 
 @pytest.mark.parametrize(
+    "text,gross,inner,caliber",
+    [
+        ("建筑面积108㎡", 108.0, None, "gross"),
+        ("建面89.5", 89.5, None, "gross"),
+        ("套内84㎡", None, 84.0, "inner"),
+        ("套内面积84平方米", None, 84.0, "inner"),
+        ("套内建筑面积84㎡", None, 84.0, "inner"),
+        ("使用面积76.5㎡", None, 76.5, "inner"),
+        ("89.5平方米（套内72）", 89.5, 72.0, "both"),
+        ("建筑面积108㎡ 套内84㎡", 108.0, 84.0, "both"),
+        ("89.5㎡", None, None, "unknown"),
+        ("118", None, None, "unknown"),
+        ("暂无", None, None, "missing"),
+    ],
+)
+def test_area_caliber_variants(text, gross, inner, caliber):
+    detail = normalizer.parse_area_detail(text)
+    assert detail["gross"] == gross
+    assert detail["inner"] == inner
+    assert detail["caliber"] == caliber
+
+
+def test_area_caliber_flags_and_canonical_value():
+    norm = normalizer.normalize_listing(
+        {
+            "community_raw": "翠湖名邸",
+            "layout_raw": "3-2-1",
+            "area_raw": "套内84㎡",
+            "price_raw": "598万",
+            "floor_raw": "2/18",
+            "orientation_raw": "南北",
+            "title": "",
+        }
+    )
+    assert norm["area_caliber"] == "inner"
+    assert norm["area_inner"] == 84.0
+    # 仅套内：单条阶段不折算，待 calibrate_areas 按小区得房率回填
+    assert norm["area_num"] is None
+    assert "area_caliber_inner" in norm["parse_flags"]
+
+
+def test_area_falls_back_to_title_when_missing():
+    norm = normalizer.normalize_listing(
+        {
+            "community_raw": "翠湖名邸",
+            "layout_raw": "3-2-1",
+            "area_raw": "暂无",
+            "price_raw": "598万",
+            "floor_raw": "2/18",
+            "orientation_raw": "南北",
+            "title": "翠湖名邸 建筑面积108㎡ 套内84㎡ 南北通透",
+        }
+    )
+    assert norm["area_caliber"] == "both"
+    assert norm["area_gross"] == 108.0
+    assert norm["area_inner"] == 84.0
+    assert norm["area_num"] == 108.0
+    assert "area_from_title" in norm["parse_flags"]
+
+
+@pytest.mark.parametrize(
     "text,expected",
     [
         ("3/18", (3, 18, "low")),

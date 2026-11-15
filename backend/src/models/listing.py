@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.models import Base
@@ -33,6 +33,11 @@ class Listing(Base):
     community_norm: Mapped[str] = mapped_column(String(160), default="", index=True)
     layout_norm: Mapped[str] = mapped_column(String(40), default="")
     area_num: Mapped[float | None] = mapped_column(Float, nullable=True, index=True)
+    area_gross: Mapped[float | None] = mapped_column(Float, nullable=True)
+    area_inner: Mapped[float | None] = mapped_column(Float, nullable=True)
+    area_caliber: Mapped[str] = mapped_column(String(20), default="unknown")
+    area_inferred: Mapped[bool] = mapped_column(Boolean, default=False)
+    area_basis: Mapped[str] = mapped_column(String(255), default="")
     price_num: Mapped[int | None] = mapped_column(Integer, nullable=True)
     floor_num: Mapped[int | None] = mapped_column(Integer, nullable=True)
     floor_total: Mapped[int | None] = mapped_column(Integer, nullable=True)

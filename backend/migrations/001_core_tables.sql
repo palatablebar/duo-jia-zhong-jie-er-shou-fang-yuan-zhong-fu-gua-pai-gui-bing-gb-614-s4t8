@@ -61,7 +61,13 @@ CREATE TABLE listings (
     captured_at      DATETIME     NOT NULL,
     community_norm   VARCHAR(160),
     layout_norm      VARCHAR(40),
-    area_num         DOUBLE,
+    area_num         DOUBLE,          -- 采信面积（统一折算为建筑面积口径）
+    area_gross       DOUBLE,          -- 原文建筑面积（若有）
+    area_inner       DOUBLE,          -- 原文套内面积（若有）
+    area_caliber     VARCHAR(20),     -- gross / inner / both / unknown / missing
+    area_inferred    BOOLEAN          -- 采信面积是否由套内折算而来
+                       NOT NULL DEFAULT FALSE,
+    area_basis       VARCHAR(255),    -- 该条的采信依据说明
     price_num        INT,
     floor_num        INT,
     floor_total      INT,
@@ -85,6 +91,8 @@ CREATE TABLE properties (
     area_mode    DOUBLE,
     area_min     DOUBLE,
     area_max     DOUBLE,
+    area_caliber VARCHAR(20),         -- 簇采信口径：gross / mixed / inner / unknown
+    area_basis   JSON,                -- 簇级面积依据（成员口径计数、得房率、summary）
     price_median INT,
     price_min    INT,
     price_max    INT,

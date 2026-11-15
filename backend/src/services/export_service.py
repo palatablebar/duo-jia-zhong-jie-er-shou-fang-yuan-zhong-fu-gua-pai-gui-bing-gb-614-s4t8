@@ -1,10 +1,16 @@
-"""导出服务：归并簇 / 挂牌明细 / 复核单 CSV（含两个算法的结果列）。"""
+"""导出服务：归并簇 / 挂牌明细 / 复核单 CSV（含两个算法的结果列）。
+
+对账路径：clusters.csv 的「成员挂牌」↔ listings.csv 的「挂牌编号」；
+listings.csv 的「所属簇」↔ clusters.csv 的「簇编号」——房源主档、原始挂牌、
+银行估价清单三方的成员关系可以互相勾稽。
+"""
 from __future__ import annotations
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.constants.enums import (
+    AREA_CALIBER_LABELS,
     LISTING_STATUS_LABELS,
     REVIEW_REASON_LABELS,
     REVIEW_STATUS_LABELS,
@@ -23,17 +29,32 @@ def _tags(tags: list[str] | None) -> str:
     return " / ".join(RISK_TAG_LABELS.get(tag, tag) for tag in (tags or []))
 
 
+def _caliber(caliber: str | None) -> str:
+    return AREA_CALIBER_LABELS.get(caliber or "", caliber or "")
+
+
 def clusters_csv(db: Session) -> bytes:
     props = db.scalars(select(Property).order_by(Property.risk_score.desc(), Property.id)).all()
+    member_rows = db.execute(
+        select(Listing.property_id, Listing.lid).where(Listing.property_id.is_not(None)).order_by(Listing.lid)
+    ).all()
+    members_by_property: dict[int, list[str]] = {}
+    for property_id, lid in member_rows:
+        if property_id is None:
+            continue
+        members_by_property.setdefault(property_id, []).append(lid)
     headers = [
         "簇编号",
         "小区",
         "户型",
         "面积众数(㎡)",
+        "采信口径",
+        "面积依据",
         "价格中位(元)",
         "簇置信",
         "成员挂牌数",
         "中介数",
+        "成员挂牌",
         "价格极差(万元)",
         "离散度",
         "风险分",
@@ -46,16 +67,20 @@ def clusters_csv(db: Session) -> bytes:
     rows = []
     for prop in props:
         detail = prop.risk_detail or {}
+        basis = prop.area_basis or {}
         rows.append(
             [
                 prop.id,
                 prop.community,
                 prop.layout,
                 f"{prop.area_mode:g}",
+                _caliber(prop.area_caliber),
+                basis.get("summary") or "-",
                 prop.price_median,
                 f"{prop.confidence:.3f}",
                 prop.member_count,
                 prop.agency_count,
+                " / ".join(members_by_property.get(prop.id, [])) or "-",
                 f"{prop.spread / 10000:.1f}",
                 f"{prop.dispersion:.4f}",
                 prop.risk_score,
@@ -82,7 +107,9 @@ def listings_csv(db: Session, agency_id: int | None = None) -> bytes:
         "小区(原文)",
         "小区(归一)",
         "面积(原文)",
-        "面积(㎡)",
+        "面积口径",
+        "采信面积(㎡)",
+        "面积依据",
         "价格(原文)",
         "价格(元)",
         "楼层(原文)",
@@ -107,7 +134,9 @@ def listings_csv(db: Session, agency_id: int | None = None) -> bytes:
                 listing.community_raw,
                 listing.community_norm,
                 listing.area_raw,
+                _caliber(listing.area_caliber),
                 f"{listing.area_num:g}" if listing.area_num is not None else "",
+                listing.area_basis or "",
                 listing.price_raw,
                 listing.price_num or "",
                 listing.floor_raw,

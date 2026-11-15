@@ -20,6 +20,8 @@ class Property(Base):
     area_mode: Mapped[float] = mapped_column(Float, default=0.0)
     area_min: Mapped[float] = mapped_column(Float, default=0.0)
     area_max: Mapped[float] = mapped_column(Float, default=0.0)
+    area_caliber: Mapped[str] = mapped_column(String(20), default="gross")
+    area_basis: Mapped[dict] = mapped_column(JSON, default=dict)
     price_median: Mapped[int] = mapped_column(Integer, default=0)
     price_min: Mapped[int] = mapped_column(Integer, default=0)
     price_max: Mapped[int] = mapped_column(Integer, default=0)

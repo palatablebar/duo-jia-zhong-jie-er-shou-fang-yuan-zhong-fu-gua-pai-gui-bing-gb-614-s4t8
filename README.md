@@ -2,7 +2,7 @@
 
 > 客户：安家数据 · 房源中台（7 人）。聚合 9 家中介的二手房挂牌，供 3 家银行做抵押估价参考。
 > 现状：爬虫把 9 家挂牌原样入库，同一套房出现 3-5 次，估价师手动挑一条；
-> 面积/楼层/朝向写法不一（`89.5㎡` / `89.5平米` / `建面89.5`），已成交未下架的僵尸挂牌还在拉低均价。
+> 面积/楼层/朝向写法不一（`89.5㎡` / `89.5平米` / `建面89.5` / `套内71.6㎡`），已成交未下架的僵尸挂牌还在拉低均价。
 
 本系统把「采集 → 字段解析归一 → blocking → 相似度 → 并查集 → golden record → 风险分诊 → 复核 → 导出」串成一条可追溯链路：
 同一套房只留一份主档（价格中位 / 面积众数 / 中介去重计数），
@@ -53,18 +53,29 @@ docker compose down -v --remove-orphans
 | ⑤ 风险与复核 | `#/reviews` 复核与导出 | `risk_rules` + `review_service` + `review_controller.py` | `GET /api/reviews`、`PATCH /api/reviews/{id}`、`GET /api/overview` |
 | ⑥ 导出 | `#/reviews` 复核与导出 | `export_service` + `export_controller.py` | `GET /api/exports/{clusters,listings,reviews}.csv` |
 
+导出对账路径：`clusters.csv`（银行估价清单）的「成员挂牌」↔ `listings.csv` 的「挂牌编号」，
+`listings.csv` 的「所属簇」↔ `clusters.csv` 的「簇编号」；两份清单都带「采信口径 / 面积依据」列，
+房源主档、原始挂牌、银行清单的成员关系可互相勾稽。
+
 横切能力（不计入业务模块）：登录 JWT（`auth_service` / `routes/auth.py`）、审计日志（`middlewares/audit_logger.py` + `audit_service` + `routes/audit.py`）、限流（`middlewares/rate_limit.py`）。
 
 ## 4. 两个算法（纯 Python，结果进页面与导出）
 
 ### 算法 A｜实体解析（`backend/src/services/entity_resolution.py`）
 
-- **blocking**：同 `community_norm` + 同 `layout_norm` + 面积桶（5㎡ 一档，取同桶与相邻桶）且 `|Δ面积| ≤ 5㎡`；
+- **面积口径归一（前置，`calibrate_areas`）**：先把「建筑面积 / 套内 / 双口径 / 口径缺失」解析出来
+  （`normalizer.parse_area_detail`），仅套内挂牌按**小区实测得房率**（同小区双口径挂牌的 套内÷建面
+  中位数 → 全库实测 → 默认 0.80 三层兜底）折算到建筑面积口径；口径缺失的挂牌不参与估计也不折算，
+  按原文直采。折算只由当批数据决定，幂等——同批重跑不会长出新簇；
+- **blocking**：同 `community_norm` + 同 `layout_norm` + 面积桶（5㎡ 一档，取同桶与相邻桶）且 `|Δ面积| ≤ 5㎡`（用折算后的采信面积）；
 - **相似度**：`0.35*area_close + 0.25*price_close + 0.20*floor_match + 0.10*orientation + 0.10*title_token`
   - `area_close = 1 − |Δa|/6`，`price_close = 1 − |Δp|/均值/0.30`（30% 价差处归零，跨中介报价天然差 1-3%），
     `floor_match` 同层 1.0 / 同区间 0.6，`orientation` 归一后相等 1.0，`title_token` = 标题字符二元组 Jaccard；
-- **阈值 0.80 连边**，并查集 + 传递闭包；簇置信 = 簇内最大成对分（`max_pair_score`）；
-- **golden record**：价格取簇内中位、面积取众数（并列取小）、中介数去重计数、价差 = p90 − p10。
+- **阈值 0.80 连边**；折算面积参与的连边额外要求 `|Δ面积| ≤ 3㎡`（`AREA_INFERRED_LINK_M2`），
+  防止靠宽松折算把相邻户型凑成一簇；并查集 + 传递闭包；簇置信 = 簇内最大成对分（`max_pair_score`）；
+- **golden record**：价格取簇内中位、面积取众数（并列取小）、中介数去重计数、价差 = p90 − p10；
+  同时输出**采信口径**（`area_caliber`：gross / mixed / inner / unknown）与**面积依据**（`area_basis`：
+  成员口径计数、折算得房率与来源、一句话 summary），估价师可在簇抽屉看到每个成员的口径与折算过程。
 
 ### 算法 B｜僵尸与钓鱼挂牌识别（`backend/src/services/risk_rules.py`）
 
@@ -81,6 +92,7 @@ docker compose down -v --remove-orphans
 | 风险等级 `high/medium/low/none` | `constants/enums.py::RiskLevel` + `RISK_LEVEL_LABELS` | `js/config.js::ENUMS.riskLevel`、`riskTone()` |
 | 风险标签 `bait/stale/spread` | `constants/enums.py::RiskTag` + `RISK_TAG_LABELS` | `js/config.js::ENUMS.riskTag`、`tagTone()` |
 | 挂牌状态 `active/sold/off_market` | `constants/enums.py::ListingStatus` | `js/config.js::ENUMS.listingStatus`、`statusTone()` |
+| 面积口径 `gross/inner/both/unknown/missing/mixed` | `constants/enums.py::AreaCaliber` + `AREA_CALIBER_LABELS` | `js/config.js::ENUMS.areaCaliber`、`caliberTone()` |
 | 渠道类型 `broker/platform/feed` | `constants/enums.py::AgencyKind` | `js/config.js::ENUMS.agencyKind` |
 | 复核状态/原因、运行状态、触发方式 | `enums.py::ReviewStatus/ReviewReason/RunStatus/TriggerKind` | `js/config.js::ENUMS.reviewStatus/reviewReason/runStatus/trigger` |
 | 角色与权限点 | `constants/roles.py::PERMISSIONS` | `js/config.js::PERMISSIONS` + `can()` |
@@ -99,7 +111,8 @@ docker compose down -v --remove-orphans
 ## 7. seed 口径（幂等）
 
 `backend/scripts/demo_config.py` 确定性生成：9 家中介 × 60 条 = **540 条挂牌**，覆盖 24 个小区、4 种户型；
-原始写法随机混用 `㎡ / 平米 / 建面 / 建筑面积 / 平方米（套内…）`、`万 / 元 / 总价…万 / 万（可谈）`、`3/18 / 3层/共18层 / 低楼层(共18层)`；
+原始写法随机混用 `㎡ / 平米 / 建面 / 建筑面积 / 平方米（套内…）/ 套内…㎡`、`万 / 元 / 总价…万 / 万（可谈）`、`3/18 / 3层/共18层 / 低楼层(共18层)`；
+仅套内挂牌由算法 A 按小区实测得房率折算回建筑面积口径，归并结果与直采一致；
 含 2 条脏数据（楼层缺失、价格面议）。
 
 跑完算法 A/B 后：**386 个房源簇**（41 个多成员簇，去重率 28.52%）、**6 个风险簇**（1 个钓鱼价簇含 2 条 bait、5 条僵尸挂牌）、**6 张待复核单**。

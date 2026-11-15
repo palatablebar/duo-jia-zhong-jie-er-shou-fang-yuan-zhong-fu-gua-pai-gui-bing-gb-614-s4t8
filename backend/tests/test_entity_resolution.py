@@ -93,3 +93,80 @@ def test_threshold_controls_linking():
     strict = er.resolve(rows, [1, 2], threshold=0.99)
     assert loose["metrics"]["clusters"] == 1
     assert strict["metrics"]["clusters"] == 2
+
+
+def test_cross_caliber_same_property_merges():
+    """中介 A 建面 108 / 中介 B 仅套内 84 / 中介 C 双口径：同一套房并成一簇（跨中介覆盖率）。"""
+    rows = [
+        _row(area="建筑面积108㎡", price="598万"),
+        _row(area="套内84㎡", price="602万"),
+        _row(area="建筑面积108㎡（套内84㎡）", price="606万"),
+    ]
+    result = er.resolve(rows, [1, 2, 3])
+    assert result["metrics"]["clusters"] == 1
+    golden = result["clusters"][0]["golden"]
+    assert golden["area_caliber"] == "mixed"
+    assert abs(golden["area_mode"] - 108.0) < 1.0
+    basis = golden["area_basis"]
+    assert basis["members_inferred"] == 1
+    assert abs(basis["inner_ratio"] - 84.0 / 108.0) < 0.01
+    assert basis["ratio_source"] == "community"
+    assert "套内" in basis["summary"]
+
+
+def test_adjacent_layout_not_merged_by_conversion():
+    """同小区相邻户型：套内折算把 84 折成 105 后，只能并上真正的 105 那套，不能把 108 也凑进来。"""
+    rows = [
+        _row(area="建筑面积108㎡（套内86.4㎡）", price="598万", floor="2/18"),
+        _row(area="套内84㎡", price="592万", floor="9/18", orientation="北", title="3-2-1 105平方米 北 9层 随时看房"),
+        _row(area="建筑面积105㎡", price="590万", floor="9/18", orientation="北", title="3-2-1 105平方米 北 9层 随时看房"),
+    ]
+    result = er.resolve(rows, [1, 2, 3])
+    assert result["metrics"]["clusters"] == 2
+    sizes = sorted(len(cluster["members"]) for cluster in result["clusters"])
+    assert sizes == [1, 2]
+    merged = next(cluster for cluster in result["clusters"] if len(cluster["members"]) == 2)
+    assert merged["members"] == [1, 2]
+    assert merged["golden"]["area_caliber"] == "mixed"
+
+
+def test_inferred_link_requires_tighter_area_diff():
+    """折算面积参与的连边面积差硬上限 3㎡：总分过阈值但差 3.2㎡ 的折算对不连。"""
+    rows = [
+        _row(area="建筑面积100㎡（套内80㎡）", price="500万"),
+        _row(area="套内82.56㎡", price="500万"),  # 折 103.2，与 100 差 3.2㎡
+    ]
+    result = er.resolve(rows, [1, 2])
+    assert result["metrics"]["clusters"] == 2
+    direct = [
+        _row(area="建筑面积100㎡", price="500万"),
+        _row(area="建筑面积103.2㎡", price="500万"),
+    ]
+    assert er.resolve(direct, [1, 2])["metrics"]["clusters"] == 1
+
+
+def test_calibrate_areas_idempotent():
+    rows = [_row(area="套内84㎡"), _row(area="建筑面积108㎡（套内84㎡）")]
+    er.calibrate_areas(rows)
+    snapshot = [(row["area_num"], row["area_inferred"], row["area_basis"]) for row in rows]
+    er.calibrate_areas(rows)
+    assert [(row["area_num"], row["area_inferred"], row["area_basis"]) for row in rows] == snapshot
+
+
+def test_rerun_same_batch_does_not_spawn_new_clusters():
+    """口径缺失/仅套内的挂牌同批重跑：两次 resolve 簇集合逐字一致（不新增簇）。"""
+    rows = [
+        _row(area="89.5㎡", price="598万"),
+        _row(area="套内71.6㎡", price="602万"),
+        _row(area="建筑面积89.5㎡（套内71.6㎡）", price="606万"),
+        _row(area="118", price="780万", floor="12/18"),
+    ]
+    first = er.resolve([dict(row) for row in rows], [1, 2, 3, 4])
+    second = er.resolve([dict(row) for row in rows], [1, 2, 3, 4])
+    assert first["metrics"]["clusters"] == second["metrics"]["clusters"] == 2
+    assert [cluster["members"] for cluster in first["clusters"]] == [
+        cluster["members"] for cluster in second["clusters"]
+    ]
+    # 口径缺失的挂牌保持直采，不参与得房率估计也不被折算
+    assert rows[0]["area_caliber"] == "unknown"
+    assert rows[0]["area_inferred"] is False

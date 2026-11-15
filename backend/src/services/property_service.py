@@ -4,7 +4,7 @@ from __future__ import annotations
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from src.constants.enums import RISK_LEVEL_LABELS, RISK_TAG_LABELS
+from src.constants.enums import AREA_CALIBER_LABELS, RISK_LEVEL_LABELS, RISK_TAG_LABELS
 from src.models.agency import Agency
 from src.models.listing import Listing
 from src.models.property import Property
@@ -22,6 +22,9 @@ def serialize(prop: Property, agency_names: list[str] | None = None) -> dict:
         "area_mode": prop.area_mode,
         "area_min": prop.area_min,
         "area_max": prop.area_max,
+        "area_caliber": prop.area_caliber,
+        "area_caliber_label": AREA_CALIBER_LABELS.get(prop.area_caliber, prop.area_caliber),
+        "area_basis": prop.area_basis or {},
         "price_median": prop.price_median,
         "price_min": prop.price_min,
         "price_max": prop.price_max,

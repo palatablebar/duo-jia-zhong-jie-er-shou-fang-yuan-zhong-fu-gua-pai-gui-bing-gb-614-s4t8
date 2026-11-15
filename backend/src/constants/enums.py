@@ -126,6 +126,27 @@ RISK_TAG_LABELS: dict[str, str] = {
 RISK_TAG_ORDER: list[str] = [RiskTag.BAIT.value, RiskTag.STALE.value, RiskTag.SPREAD.value]
 
 
+class AreaCaliber(StrEnum):
+    """面积口径（挂牌级）；簇级另用 mixed 表示成员口径混合。"""
+
+    GROSS = "gross"
+    INNER = "inner"
+    BOTH = "both"
+    UNKNOWN = "unknown"
+    MISSING = "missing"
+    MIXED = "mixed"
+
+
+AREA_CALIBER_LABELS: dict[str, str] = {
+    AreaCaliber.GROSS.value: "建筑面积",
+    AreaCaliber.INNER.value: "仅套内",
+    AreaCaliber.BOTH.value: "双口径",
+    AreaCaliber.UNKNOWN.value: "口径缺失",
+    AreaCaliber.MISSING.value: "面积缺失",
+    AreaCaliber.MIXED.value: "混合口径",
+}
+
+
 class ReviewStatus(StrEnum):
     PENDING = "pending"
     CONFIRMED = "confirmed"

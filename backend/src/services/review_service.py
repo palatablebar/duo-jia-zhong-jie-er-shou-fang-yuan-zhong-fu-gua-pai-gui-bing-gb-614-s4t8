@@ -5,6 +5,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from src.constants.enums import (
+    AREA_CALIBER_LABELS,
     REVIEW_REASON_LABELS,
     REVIEW_STATUS_LABELS,
     RISK_LEVEL_LABELS,
@@ -37,6 +38,8 @@ def serialize(review: Review, prop: Property | None = None) -> dict:
             "community": prop.community,
             "layout": prop.layout,
             "area_mode": prop.area_mode,
+            "area_caliber": prop.area_caliber,
+            "area_caliber_label": AREA_CALIBER_LABELS.get(prop.area_caliber, prop.area_caliber),
             "price_median": prop.price_median,
             "spread": prop.spread,
             "member_count": prop.member_count,
